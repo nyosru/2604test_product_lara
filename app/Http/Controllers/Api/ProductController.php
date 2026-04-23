@@ -5,12 +5,15 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\ProductIndexRequest;
 use App\Http\Resources\ProductResource;
-use App\Models\Product;
-use Illuminate\Database\Eloquent\Builder;
+use App\Repositories\ProductRepositoryInterface;
 use OpenApi\Attributes as OA;
 
 class ProductController extends Controller
 {
+    public function __construct(
+        private readonly ProductRepositoryInterface $products,
+    ) {}
+
     #[OA\Get(
         path: '/api/products',
         summary: 'List products',
@@ -48,25 +51,12 @@ class ProductController extends Controller
     )]
     public function index(ProductIndexRequest $request)
     {
-        $filters = $request->validated();
-
-        $query = Product::query()
-            ->when($filters['q'] ?? null, fn (Builder $query, string $q) => $query->where('name', 'like', "%{$q}%"))
-            ->when(array_key_exists('price_from', $filters), fn (Builder $query) => $query->where('price', '>=', $filters['price_from']))
-            ->when(array_key_exists('price_to', $filters), fn (Builder $query) => $query->where('price', '<=', $filters['price_to']))
-            ->when(array_key_exists('category_id', $filters), fn (Builder $query) => $query->where('category_id', $filters['category_id']))
-            ->when(array_key_exists('in_stock', $filters), fn (Builder $query) => $query->where('in_stock', $filters['in_stock']))
-            ->when(array_key_exists('rating_from', $filters), fn (Builder $query) => $query->where('rating', '>=', $filters['rating_from']));
-
-        match ($request->sort()) {
-            ProductIndexRequest::SORT_PRICE_ASC => $query->orderBy('price'),
-            ProductIndexRequest::SORT_PRICE_DESC => $query->orderByDesc('price'),
-            ProductIndexRequest::SORT_RATING_DESC => $query->orderByDesc('rating'),
-            default => $query->latest(),
-        };
-
         return ProductResource::collection(
-            $query->paginate($request->perPage())->withQueryString()
+            $this->products->paginate(
+                filters: $request->validated(),
+                sort: $request->sort(),
+                perPage: $request->perPage(),
+            )
         );
     }
 }
